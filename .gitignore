@@ -1,0 +1,17 @@
+# Logs
+*.log
+
+# Temporary files
+*.pid
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup folder (optional - remove this line if you want to include backups)
+backup/

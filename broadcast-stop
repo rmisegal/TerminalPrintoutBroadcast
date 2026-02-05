@@ -1,0 +1,42 @@
+#!/bin/bash
+# broadcast-stop - Stop the terminal broadcast (works for both stable and random URL)
+
+SHARE_DIR="/mnt/c/terminal_share"
+URL_FILE="$SHARE_DIR/student_url.txt"
+SERVER_PID="/tmp/broadcast_server.pid"
+TUNNEL_PID="/tmp/tunnel.pid"
+KEEPER_PID="/tmp/tunnel_keeper.pid"
+
+echo "Stopping broadcast..."
+
+# Stop Python server
+if [ -f "$SERVER_PID" ]; then
+    kill $(cat "$SERVER_PID") 2>/dev/null
+    rm -f "$SERVER_PID"
+fi
+pkill -f "server.py" 2>/dev/null
+pkill -f "python3.*8080" 2>/dev/null
+
+# Stop tunnel keeper (for random URL mode)
+if [ -f "$KEEPER_PID" ]; then
+    kill $(cat "$KEEPER_PID") 2>/dev/null
+    rm -f "$KEEPER_PID"
+fi
+pkill -f "tunnel-keeper" 2>/dev/null
+
+# Stop tunnel (ngrok, localhost.run, and localtunnel)
+if [ -f "$TUNNEL_PID" ]; then
+    kill $(cat "$TUNNEL_PID") 2>/dev/null
+    rm -f "$TUNNEL_PID"
+fi
+pkill -f "ssh.*localhost.run" 2>/dev/null
+pkill -f "lt --port" 2>/dev/null
+pkill -f "ngrok" 2>/dev/null
+
+# Clean up
+rm -f "$URL_FILE" /tmp/tunnel.log /tmp/server.log /tmp/tunnel_keeper.log 2>/dev/null
+
+echo "[OK] Broadcast stopped."
+echo ""
+echo "To stop PowerShell logging, run in PowerShell:"
+echo "  Stop-Transcript"

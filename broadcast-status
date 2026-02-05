@@ -1,0 +1,51 @@
+#!/bin/bash
+# broadcast-status - Check broadcast status and show URL
+
+SHARE_DIR="/mnt/c/terminal_share"
+URL_FILE="$SHARE_DIR/student_url.txt"
+SERVER_PID="/tmp/broadcast_server.pid"
+TUNNEL_PID="/tmp/tunnel.pid"
+TUNNEL_LOG="/tmp/tunnel.log"
+
+echo "=========================================="
+echo "  LGM Broadcast Status"
+echo "=========================================="
+
+# Check if server is running
+SERVER_RUNNING=false
+if [ -f "$SERVER_PID" ] && kill -0 $(cat "$SERVER_PID") 2>/dev/null; then
+    SERVER_RUNNING=true
+fi
+
+# Check if tunnel is running
+TUNNEL_RUNNING=false
+if [ -f "$TUNNEL_PID" ] && kill -0 $(cat "$TUNNEL_PID") 2>/dev/null; then
+    TUNNEL_RUNNING=true
+fi
+
+if $SERVER_RUNNING && $TUNNEL_RUNNING; then
+    echo "  Status: RUNNING"
+    echo ""
+
+    # Get URL from file or log
+    if [ -f "$URL_FILE" ]; then
+        echo "  Student URL:"
+        echo "  $(cat $URL_FILE)"
+    elif [ -f "$TUNNEL_LOG" ]; then
+        URL=$(grep -o 'https://[a-z0-9]*\.lhr\.life' "$TUNNEL_LOG" | head -1)
+        if [ -n "$URL" ]; then
+            echo "  Student URL:"
+            echo "  $URL"
+        fi
+    fi
+elif $SERVER_RUNNING; then
+    echo "  Status: PARTIALLY RUNNING (tunnel down)"
+    echo ""
+    echo "  Run 'broadcast-stop' then 'broadcast-start' to restart."
+else
+    echo "  Status: NOT RUNNING"
+    echo ""
+    echo "  Run 'broadcast-start' to begin."
+fi
+
+echo "=========================================="
