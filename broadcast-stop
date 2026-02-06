@@ -39,5 +39,6 @@ rm -f "$URL_FILE" /tmp/tunnel.log /tmp/server.log /tmp/tunnel_keeper.log /tmp/cl
 
 echo "[OK] Broadcast stopped."
 echo ""
-echo "To stop PowerShell logging, run in PowerShell:"
-echo "  Stop-Transcript"
+echo "In PowerShell:"
+echo "  - Press Ctrl+C to stop your program"
+echo "  - (If using Start-Transcript, also run: Stop-Transcript)"

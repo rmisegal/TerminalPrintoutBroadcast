@@ -734,8 +734,9 @@ broadcast-stop
 Stopping broadcast...
 [OK] Broadcast stopped.
 
-To stop PowerShell logging, run in PowerShell:
-  Stop-Transcript
+In PowerShell:
+  - Press Ctrl+C to stop your program
+  - (If using Start-Transcript, also run: Stop-Transcript)
 ```
 
 ---
