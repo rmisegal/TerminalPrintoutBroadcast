@@ -361,6 +361,27 @@ cloudflared --version
 # Should output: cloudflared version 2024.x.x
 ```
 
+### Step 6: Fix WSL DNS (Recommended)
+
+WSL's default DNS often fails to resolve external domains. Fix it using the example files included in this repository:
+
+```bash
+# Copy the WSL config (disables auto DNS generation)
+sudo cp ~/TerminalPrintoutBroadcast/example-wsl.conf /etc/wsl.conf
+
+# Remove old resolv.conf and copy the new one
+sudo rm /etc/resolv.conf
+sudo cp ~/TerminalPrintoutBroadcast/example-resolv.conf /etc/resolv.conf
+```
+
+**Verify:**
+```bash
+curl -s https://google.com | head -1
+# Should return HTML content, not an error
+```
+
+**Note:** This sets Google (8.8.8.8) and Cloudflare (1.1.1.1) as your DNS servers. See the example files for alternative DNS options.
+
 ---
 
 ## Configuration
@@ -707,7 +728,16 @@ curl: (6) Could not resolve host: broadcast.gal-tech.net
 
 **Cause:** WSL's auto-generated DNS configuration points to an internal resolver that doesn't work properly.
 
-**Solution:**
+**Solution (Quick - using example files):**
+
+```bash
+# Use the example files from this repository
+sudo cp ~/TerminalPrintoutBroadcast/example-wsl.conf /etc/wsl.conf
+sudo rm /etc/resolv.conf
+sudo cp ~/TerminalPrintoutBroadcast/example-resolv.conf /etc/resolv.conf
+```
+
+**Solution (Manual - if you prefer):**
 
 Step 1: Disable auto DNS generation
 ```bash
@@ -727,11 +757,15 @@ nameserver 8.8.4.4
 EOF'
 ```
 
-Step 3: Verify
+**Verify:**
 ```bash
 curl -s https://broadcast.gal-tech.net | head -5
 # Should show HTML content
 ```
+
+**Reference files:**
+- `example-wsl.conf` - WSL configuration with comments
+- `example-resolv.conf` - DNS configuration with alternative options
 
 **Note:** After `wsl --shutdown`, the fix persists because of the `/etc/wsl.conf` setting.
 
@@ -749,6 +783,8 @@ curl -s https://broadcast.gal-tech.net | head -5
 | `broadcast-start-stable` | Start broadcast with localtunnel (alternative) |
 | `broadcast-stop` | Stop all broadcast services |
 | `broadcast-status` | Check status and show last output |
+| `example-wsl.conf` | Example WSL config - copy to `/etc/wsl.conf` |
+| `example-resolv.conf` | Example DNS config - copy to `/etc/resolv.conf` |
 
 ### Configuration Files
 
