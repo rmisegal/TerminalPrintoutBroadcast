@@ -698,6 +698,43 @@ Stop-Transcript
 your-program.exe *>> C:\terminal_share\program_output.txt
 ```
 
+### Problem: WSL DNS not resolving (curl fails but browser works)
+
+**Symptom:**
+```bash
+curl: (6) Could not resolve host: broadcast.gal-tech.net
+```
+
+**Cause:** WSL's auto-generated DNS configuration points to an internal resolver that doesn't work properly.
+
+**Solution:**
+
+Step 1: Disable auto DNS generation
+```bash
+sudo bash -c 'cat > /etc/wsl.conf << EOF
+[network]
+generateResolvConf = false
+EOF'
+```
+
+Step 2: Set public DNS servers
+```bash
+sudo rm /etc/resolv.conf
+sudo bash -c 'cat > /etc/resolv.conf << EOF
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+nameserver 8.8.4.4
+EOF'
+```
+
+Step 3: Verify
+```bash
+curl -s https://broadcast.gal-tech.net | head -5
+# Should show HTML content
+```
+
+**Note:** After `wsl --shutdown`, the fix persists because of the `/etc/wsl.conf` setting.
+
 ---
 
 ## File Reference
