@@ -483,6 +483,44 @@ ingress:
 
 Save and exit (Ctrl+X, Y, Enter).
 
+### Step 7: Customize Browser Refresh Rate (Optional)
+
+The browser auto-refreshes every **500 milliseconds** (0.5 seconds) by default. You can change this in `server.py`.
+
+**To change the refresh rate:**
+
+1. Open the server file:
+```bash
+nano ~/TerminalPrintoutBroadcast/server.py
+```
+
+2. Find this line (around line 60):
+```javascript
+setInterval(refresh, 500);
+```
+
+3. Change `500` to your desired value in milliseconds:
+
+| Value | Refresh Rate | Use Case |
+|-------|--------------|----------|
+| `250` | 4 times/second | Fastest updates, higher CPU |
+| `500` | 2 times/second | Default, good balance |
+| `1000` | 1 time/second | Lower CPU, slight delay |
+| `2000` | Every 2 seconds | Minimal CPU, noticeable delay |
+| `5000` | Every 5 seconds | Very low CPU, significant delay |
+
+4. Save and restart the broadcast:
+```bash
+broadcast-stop
+broadcast-start-cloudflare
+```
+
+**Trade-offs:**
+- **Faster refresh (lower number):** More responsive, but uses more CPU/bandwidth
+- **Slower refresh (higher number):** Less responsive, but uses less resources
+
+**Recommendation:** Keep the default `500` unless you have a specific reason to change it.
+
 ---
 
 ## Usage Guide
