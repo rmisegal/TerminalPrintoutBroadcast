@@ -18,8 +18,9 @@ A tool for instructors to broadcast their terminal output to students in real-ti
 10. [Configuration](#configuration)
 11. [Usage Guide](#usage-guide)
 12. [Status Monitoring](#status-monitoring)
-13. [Troubleshooting](#troubleshooting)
-14. [File Reference](#file-reference)
+13. [Scripts Reference](#scripts-reference)
+14. [Troubleshooting](#troubleshooting)
+15. [File Reference](#file-reference)
 
 ---
 
@@ -643,6 +644,117 @@ broadcast-status
 ```
 
 This means your program stopped producing output. Check if it's still running.
+
+---
+
+## Scripts Reference
+
+### broadcast-start-cloudflare
+
+Starts the broadcast using Cloudflare Tunnel.
+
+```bash
+broadcast-start-cloudflare
+```
+
+**What it does (in order):**
+1. Checks if cloudflared is installed and configured
+2. Checks if tunnel `terminal-broadcast` exists
+3. Creates shared folder `/mnt/c/terminal_share` if missing
+4. Kills any old server/tunnel processes
+5. Starts Python server (`server.py`) on port 8080
+6. Starts Cloudflare tunnel (`cloudflared tunnel run terminal-broadcast`)
+7. Verifies tunnel connection
+8. Displays the permanent URL
+
+**Prerequisites:**
+- cloudflared installed (`cloudflared --version`)
+- Logged in to Cloudflare (`~/.cloudflared/cert.pem` exists)
+- Tunnel created (`cloudflared tunnel list` shows `terminal-broadcast`)
+- Config file exists (`~/.cloudflared/config.yml`)
+
+---
+
+### broadcast-stop
+
+Stops all broadcast services.
+
+```bash
+broadcast-stop
+```
+
+**What it does (in order):**
+1. Kills Python server process (`server.py`)
+2. Kills Cloudflare tunnel process (`cloudflared tunnel run`)
+3. Kills ngrok process (if running)
+4. Kills localtunnel process (if running)
+5. Removes temporary PID files
+6. Cleans up log files
+
+**Output:**
+```
+Stopping broadcast...
+[OK] Broadcast stopped.
+
+To stop PowerShell logging, run in PowerShell:
+  Stop-Transcript
+```
+
+---
+
+### broadcast-status
+
+Checks the status of all broadcast components.
+
+```bash
+broadcast-status
+```
+
+**What it checks:**
+1. Python server running? (shows PID)
+2. Cloudflare tunnel running? (shows PID)
+3. Fallback: ngrok or localtunnel running?
+4. Displays the correct URL based on which tunnel is active
+5. Log file exists and last modified time
+6. Warns if no update in last 10 seconds
+7. Shows file size
+8. Displays last 5 lines of output
+9. Shows browser refresh rate (500ms)
+
+**Status indicators:**
+| Indicator | Meaning |
+|-----------|---------|
+| `[OK]` | Component is running correctly |
+| `[X]` | Component is not running |
+| `[!] WARNING` | Potential problem detected |
+
+---
+
+### Quick Reference Table
+
+| Command | Purpose | When to Use |
+|---------|---------|-------------|
+| `broadcast-start-cloudflare` | Start broadcast | Beginning of class |
+| `broadcast-stop` | Stop broadcast | End of class |
+| `broadcast-status` | Check if working | Anytime to verify |
+
+---
+
+### Script Locations
+
+All scripts are in `~/TerminalPrintoutBroadcast/`:
+
+```
+~/TerminalPrintoutBroadcast/
+├── broadcast-start-cloudflare  # Start with Cloudflare (recommended)
+├── broadcast-start-ngrok       # Start with ngrok (alternative)
+├── broadcast-start-stable      # Start with localtunnel (alternative)
+├── broadcast-stop              # Stop all services
+├── broadcast-status            # Check status
+├── server.py                   # Python HTTP server
+├── example-wsl.conf            # Example WSL DNS config
+└── example-resolv.conf         # Example DNS resolver config
+```
 
 ---
 
