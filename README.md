@@ -1,83 +1,446 @@
 # Terminal Printout Broadcast
 
-Broadcast your PowerShell terminal output to students/viewers in real-time through a web browser.
+A tool for instructors to broadcast their terminal output to students in real-time through a web browser.
 
-## Objective
+---
 
-This tool allows instructors to share their terminal output with students during live coding sessions. Students can view the terminal output in real-time through any web browser - no installation required on their end.
+## Table of Contents
+
+1. [What Problem Does This Solve?](#what-problem-does-this-solve)
+2. [How It Works - The Concept](#how-it-works---the-concept)
+3. [Data Flow Diagram](#data-flow-diagram)
+4. [Tunnel Options Comparison](#tunnel-options-comparison)
+5. [Why We Chose Cloudflare Tunnel](#why-we-chose-cloudflare-tunnel)
+6. [Prerequisites - What You Need](#prerequisites---what-you-need)
+7. [Free Account Limits](#free-account-limits)
+8. [Risks and Considerations](#risks-and-considerations)
+9. [Installation Guide](#installation-guide)
+10. [Configuration](#configuration)
+11. [Usage Guide](#usage-guide)
+12. [Status Monitoring](#status-monitoring)
+13. [Troubleshooting](#troubleshooting)
+14. [File Reference](#file-reference)
+
+---
+
+## What Problem Does This Solve?
+
+### The Problem
+
+During live coding sessions or classes, instructors need to share their terminal output with students. Traditional solutions have limitations:
+
+| Traditional Solution | Problem |
+|---------------------|---------|
+| Screen sharing (Zoom/Teams) | High bandwidth, lag, requires all students to join call |
+| Projector | Only works in physical classroom |
+| Copy-paste to chat | Manual, not real-time, loses formatting |
+| SSH access for students | Security risk, complex setup |
+
+### The Solution
+
+This tool creates a **live web page** that displays your terminal output. Students simply open a URL in their browser - no installation, no login, no special software required.
+
+**Example:** You run a server on your machine. Students open `https://broadcast.gal-tech.net` and see every log message as it appears, with less than 1 second delay.
+
+---
+
+## How It Works - The Concept
+
+The system has four components:
 
 ```
-[PowerShell Terminal] --> [Log File] --> [Python Server] --> [Tunnel] --> [Students' Browsers]
+┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌─────────────┐
+│  Your       │    │  Log File    │    │  Python     │    │  Tunnel     │
+│  Program    │───>│  (Windows)   │<───│  Server     │───>│  Service    │
+│             │    │              │    │  (WSL)      │    │             │
+└─────────────┘    └──────────────┘    └─────────────┘    └──────┬──────┘
+                                                                  │
+                                                                  │ Internet
+                                                                  ▼
+                                                         ┌─────────────┐
+                                                         │  Student's  │
+                                                         │  Browser    │
+                                                         └─────────────┘
 ```
 
-## Features
+### Component Explanation
 
-- Real-time terminal broadcast (0.5 second delay)
-- Works with any web browser
-- Supports 50+ simultaneous viewers
-- No installation required for viewers
-- Dark terminal-style interface
-- Auto-scrolling to latest output
-- **Permanent URL** with Cloudflare Tunnel (recommended)
+| Component | What It Does | Location |
+|-----------|--------------|----------|
+| **Your Program** | Prints output that you want to share | PowerShell (Windows) |
+| **Log File** | Stores the output in a text file | `C:\terminal_share\program_output.txt` |
+| **Python Server** | Reads the file and serves it as a web page | WSL (localhost:8080) |
+| **Tunnel Service** | Makes your local server accessible from the internet | WSL → Internet |
+| **Student's Browser** | Displays the web page with auto-refresh | Any device, anywhere |
 
----
+### The Magic: Auto-Refresh
 
-## Tunnel Options
-
-| Option | URL Type | Limits | Setup |
-|--------|----------|--------|-------|
-| **Cloudflare Tunnel** (recommended) | Permanent (`broadcast.yourdomain.com`) | Unlimited | Requires your own domain |
-| ngrok | Changes each restart | Free tier has bandwidth limits | Free account required |
-| localtunnel | Stable subdomain | Unlimited but asks for IP password | No signup |
+The web page contains JavaScript that fetches new content every **500 milliseconds** (0.5 seconds). This creates the illusion of real-time streaming without complex WebSocket setup.
 
 ---
 
-## Prerequisites
+## Data Flow Diagram
 
-### On Your Machine (Instructor)
+```
+STEP 1: Program Output
+========================
+PowerShell> uv run my-server.py *>> C:\terminal_share\program_output.txt
 
-- **Windows 10/11** with WSL2 (Ubuntu)
-- **Python 3** (in WSL)
-- **One of:** Cloudflare account + domain (recommended), ngrok account, or npm for localtunnel
+    Your program prints: "[INFO] Server started on port 3000"
+                              │
+                              ▼
+STEP 2: File Write
+========================
+    Windows writes to: C:\terminal_share\program_output.txt
+    (File grows with each new line)
+                              │
+                              ▼
+STEP 3: Server Reads
+========================
+    Python server (WSL) reads: /mnt/c/terminal_share/program_output.txt
+    Converts to HTML with terminal styling
+    Serves on: http://localhost:8080
+                              │
+                              ▼
+STEP 4: Tunnel Forwards
+========================
+    Cloudflared creates encrypted tunnel:
+    localhost:8080 ←──────→ Cloudflare Edge Servers
+                              │
+                              ▼
+STEP 5: DNS Resolution
+========================
+    Student types: https://broadcast.gal-tech.net
+    DNS resolves to: Cloudflare Edge Server
+    Cloudflare routes to: Your tunnel → Your server
+                              │
+                              ▼
+STEP 6: Browser Display
+========================
+    Browser receives HTML page
+    JavaScript fetches /content every 500ms
+    New content appears automatically
+
+    ┌────────────────────────────────────┐
+    │ Terminal Broadcast           Live  │
+    │────────────────────────────────────│
+    │ [INFO] Server started on port 3000 │
+    │ [INFO] Client connected: 192.168.1 │
+    │ [INFO] Processing request...       │
+    │ █                                  │
+    └────────────────────────────────────┘
+```
 
 ---
 
-## Installation
+## Tunnel Options Comparison
 
-### Option A: Cloudflare Tunnel (Recommended - Permanent URL)
+We evaluated three tunneling services:
 
-#### Step 1: Install cloudflared in WSL
+| Feature | Cloudflare Tunnel | ngrok | localtunnel |
+|---------|-------------------|-------|-------------|
+| **URL Type** | Permanent (your domain) | Random, changes each restart | Stable subdomain |
+| **Example URL** | `broadcast.gal-tech.net` | `a1b2c3.ngrok-free.app` | `lgm-monitor.loca.lt` |
+| **Bandwidth Limit** | Unlimited | 1 GB/month (free) | Unlimited |
+| **Requires Account** | Yes (free) | Yes (free) | No |
+| **Requires Domain** | Yes | No | No |
+| **IP Verification** | No | No | Yes (annoying) |
+| **Reliability** | Excellent | Good | Poor |
+| **Setup Complexity** | Medium | Easy | Easy |
+| **Cost** | Free | Free (limited) / $8/mo | Free |
+
+### Detailed Comparison
+
+#### ngrok
+```
+Pros:
+  + Easy setup (5 minutes)
+  + No domain required
+  + Good documentation
+
+Cons:
+  - URL changes every restart (students need new link each class)
+  - 1 GB/month bandwidth limit (can hit this quickly with many students)
+  - Free tier shows "Visit Site" interstitial page
+
+Why we stopped using it:
+  We hit the bandwidth limit during a class with 30 students.
+```
+
+#### localtunnel
+```
+Pros:
+  + No account required
+  + Stable subdomain (lgm-monitor.loca.lt)
+  + Unlimited bandwidth
+
+Cons:
+  - Asks students for IP password on first visit
+  - Unreliable (tunnel drops frequently)
+  - IP verification often fails even with correct IP
+
+Why we stopped using it:
+  Students kept getting "incorrect IP" errors even with the right password.
+```
+
+#### Cloudflare Tunnel (Recommended)
+```
+Pros:
+  + Permanent URL that never changes
+  + Unlimited bandwidth
+  + Highly reliable (enterprise-grade)
+  + No interstitial pages
+  + Free forever
+
+Cons:
+  - Requires owning a domain (~$10/year)
+  - More complex initial setup (15-20 minutes)
+  - Domain DNS must be on Cloudflare
+
+Why we chose it:
+  Once configured, it just works. Students bookmark one URL and use it
+  all semester. No bandwidth limits, no IP verification, no surprises.
+```
+
+---
+
+## Why We Chose Cloudflare Tunnel
+
+After testing all three options in real classroom settings:
+
+1. **ngrok** failed us when we hit bandwidth limits mid-class
+2. **localtunnel** frustrated students with constant IP verification errors
+3. **Cloudflare Tunnel** required more setup but has been 100% reliable
+
+**Bottom line:** Spend 20 minutes setting up Cloudflare once, or waste 5 minutes every class dealing with ngrok/localtunnel issues.
+
+---
+
+## Prerequisites - What You Need
+
+### Required
+
+| Requirement | Why Needed | How to Get |
+|-------------|------------|------------|
+| Windows 10/11 | Your main OS | Already have it |
+| WSL2 (Ubuntu) | Run Linux tools | `wsl --install` in PowerShell |
+| Python 3 | Run the server | Pre-installed in Ubuntu WSL |
+| Domain name | For permanent URL | Purchase from Namecheap, GoDaddy, etc. (~$10/year) |
+| Cloudflare account | Manage tunnel | https://dash.cloudflare.com/sign-up (free) |
+
+### Domain Options
+
+You can use:
+- **A new domain** purchased for this purpose (~$10/year for `.net`)
+- **An existing domain** you already own (add a subdomain like `broadcast.`)
+- **A domain connected to other services** (Gmail Workspace, Wix) - just add the subdomain to Cloudflare
+
+**Example:** If you own `myschool.com` for email, you can still use `broadcast.myschool.com` for this tool.
+
+---
+
+## Free Account Limits
+
+### Cloudflare (Our Recommended Solution)
+
+| Resource | Free Limit | Typical Usage |
+|----------|------------|---------------|
+| Tunnels | Unlimited | You need 1 |
+| Bandwidth | Unlimited | Not a concern |
+| Requests | Unlimited | Not a concern |
+| Concurrent connections | 1000+ | You'll use 1-100 |
+
+**Cloudflare's free tier is genuinely unlimited for this use case.**
+
+### ngrok (Alternative)
+
+| Resource | Free Limit | What Happens When Exceeded |
+|----------|------------|---------------------------|
+| Bandwidth | 1 GB/month | Tunnel stops working |
+| Connections | 40/minute | Requests rejected |
+| Tunnels | 1 | Cannot create more |
+
+**Example:** 50 students refreshing every 0.5 seconds for 1 hour = ~180,000 requests. With 10 KB per response, that's 1.8 GB - exceeds free limit.
+
+### localtunnel (Alternative)
+
+| Resource | Free Limit |
+|----------|------------|
+| Everything | Unlimited |
+
+**Catch:** Reliability is poor and IP verification annoys users.
+
+---
+
+## Risks and Considerations
+
+### Security Risks
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Anyone with URL can view | Medium | URL is not guessable, share only with students |
+| Terminal output may contain secrets | High | Never display passwords, API keys, or credentials |
+| Students see your file paths | Low | Generally not sensitive |
+
+### Privacy Considerations
+
+- Students can see everything your program outputs
+- If you type passwords in the terminal, they will be visible
+- Your Windows username and paths are visible
+
+**Best Practice:** Create a dedicated PowerShell window for broadcasting. Don't use it for anything sensitive.
+
+### Operational Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Tunnel disconnects | Students can't view | `broadcast-status` alerts you |
+| Server crashes | Students see stale content | Restart with `broadcast-start-cloudflare` |
+| File grows too large | Slow loading | Clear file between classes |
+
+---
+
+## Installation Guide
+
+### Step 1: Install WSL (if not already installed)
+
+Open PowerShell as Administrator:
+```powershell
+wsl --install
+```
+
+Restart your computer, then open Ubuntu from Start menu.
+
+### Step 2: Clone the Repository
+
+In WSL terminal:
+```bash
+cd ~
+git clone https://github.com/rmisegal/TerminalPrintoutBroadcast.git
+cd TerminalPrintoutBroadcast
+```
+
+### Step 3: Add Scripts to PATH
 
 ```bash
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
-chmod +x /tmp/cloudflared && sudo mv /tmp/cloudflared /usr/local/bin/
+echo 'export PATH="$PATH:$HOME/TerminalPrintoutBroadcast"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
-#### Step 2: Login to Cloudflare
+**Verify:**
+```bash
+which broadcast-start-cloudflare
+# Should output: /home/yourusername/TerminalPrintoutBroadcast/broadcast-start-cloudflare
+```
+
+### Step 4: Create Shared Folder
+
+In PowerShell:
+```powershell
+New-Item -ItemType Directory -Path "C:\terminal_share" -Force
+```
+
+**Verify in WSL:**
+```bash
+ls /mnt/c/terminal_share
+# Should show empty directory (no error)
+```
+
+### Step 5: Install cloudflared
+
+In WSL:
+```bash
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+chmod +x /tmp/cloudflared
+sudo mv /tmp/cloudflared /usr/local/bin/
+```
+
+**Verify:**
+```bash
+cloudflared --version
+# Should output: cloudflared version 2024.x.x
+```
+
+---
+
+## Configuration
+
+### Step 1: Add Domain to Cloudflare
+
+1. Go to https://dash.cloudflare.com
+2. Click **"Add a domain"**
+3. Enter your domain (e.g., `gal-tech.net`)
+4. Select **Free plan**
+5. Cloudflare shows you nameservers like:
+   ```
+   ada.ns.cloudflare.com
+   bob.ns.cloudflare.com
+   ```
+
+### Step 2: Update Nameservers
+
+Go to where you bought your domain (GoDaddy, Namecheap, etc.) and change nameservers to Cloudflare's.
+
+**Example (Namecheap):**
+1. Login to Namecheap
+2. Domain List → Manage
+3. Nameservers → Custom DNS
+4. Enter Cloudflare nameservers
+5. Save
+
+**Wait 5-30 minutes for DNS propagation.**
+
+### Step 3: Login to Cloudflare from WSL
 
 ```bash
 cloudflared tunnel login
 ```
-Open the URL shown and authorize with your Cloudflare account.
 
-#### Step 3: Create a Named Tunnel
+This opens a browser. Select your domain and click **Authorize**.
+
+**Verify:**
+```bash
+ls ~/.cloudflared/cert.pem
+# Should exist
+```
+
+### Step 4: Create the Tunnel
 
 ```bash
 cloudflared tunnel create terminal-broadcast
 ```
 
-#### Step 4: Add DNS Route (use your domain)
+**Output example:**
+```
+Tunnel credentials written to /home/user/.cloudflared/abc123-def456.json
+Created tunnel terminal-broadcast with id abc123-def456-ghi789
+```
+
+**Save the tunnel ID** (e.g., `abc123-def456-ghi789`)
+
+### Step 5: Create DNS Route
 
 ```bash
 cloudflared tunnel route dns terminal-broadcast broadcast.yourdomain.com
 ```
 
-#### Step 5: Create Config File
+**Example:**
+```bash
+cloudflared tunnel route dns terminal-broadcast broadcast.gal-tech.net
+```
+
+### Step 6: Create Configuration File
 
 Create `~/.cloudflared/config.yml`:
+
+```bash
+nano ~/.cloudflared/config.yml
+```
+
+Enter (replace with your values):
 ```yaml
-tunnel: YOUR_TUNNEL_ID
-credentials-file: /home/YOUR_USER/.cloudflared/YOUR_TUNNEL_ID.json
+tunnel: abc123-def456-ghi789
+credentials-file: /home/YOURUSERNAME/.cloudflared/abc123-def456-ghi789.json
 
 ingress:
   - hostname: broadcast.yourdomain.com
@@ -85,280 +448,321 @@ ingress:
   - service: http_status:404
 ```
 
-Now you can use `broadcast-start-cloudflare` for a permanent URL!
+**Example for user `rmisegal` with domain `gal-tech.net`:**
+```yaml
+tunnel: 3177c4d7-75c4-4a49-9de3-1fd78bcc4250
+credentials-file: /home/rmisegal/.cloudflared/3177c4d7-75c4-4a49-9de3-1fd78bcc4250.json
+
+ingress:
+  - hostname: broadcast.gal-tech.net
+    service: http://localhost:8080
+  - service: http_status:404
+```
+
+Save and exit (Ctrl+X, Y, Enter).
 
 ---
 
-### Option B: ngrok (Easy Setup - URL Changes)
+## Usage Guide
 
-#### Step 1: Install ngrok in WSL
+### Starting a Broadcast Session
 
-Open WSL terminal and run:
-
-```bash
-# Add ngrok repository
-curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-
-# Install ngrok
-sudo apt update && sudo apt install ngrok -y
-```
-
-### Step 2: Configure ngrok
-
-1. Create a free account at: https://dashboard.ngrok.com/signup
-2. Get your authtoken from: https://dashboard.ngrok.com/get-started/your-authtoken
-3. Configure ngrok with your token:
+#### Step 1: Start the Broadcast (WSL)
 
 ```bash
-ngrok config add-authtoken YOUR_TOKEN_HERE
+broadcast-start-cloudflare
 ```
 
-### Step 3: Clone This Repository
+**Expected output:**
+```
+==========================================
+  LGM Terminal Broadcast - CLOUDFLARE
+==========================================
 
-```bash
-cd ~
-git clone https://github.com/YOUR_USERNAME/TerminalPrintoutBroadcast.git
-cd TerminalPrintoutBroadcast
+[OK] Shared folder exists: /mnt/c/terminal_share
+[OK] Log file exists: /mnt/c/terminal_share/program_output.txt
+[OK] Web server running on port 8080
+[OK] Cloudflare tunnel connected
+
+==========================================
+  BROADCAST READY!
+==========================================
+
+  PERMANENT STUDENT URL:
+  https://broadcast.gal-tech.net
+
+==========================================
 ```
 
-### Step 4: Create Shared Folder
+#### Step 2: Run Your Program (PowerShell)
 
-In PowerShell (as Administrator):
-
-```powershell
-New-Item -ItemType Directory -Path "C:\terminal_share" -Force
-```
-
-### Step 5: Add Scripts to PATH (Optional)
-
-Add to your `~/.bashrc`:
-
-```bash
-export PATH="$PATH:$HOME/TerminalPrintoutBroadcast"
-```
-
-Then reload:
-
-```bash
-source ~/.bashrc
-```
-
----
-
-## Usage
-
-### Quick Start
-
-#### 1. Start the Broadcast (WSL)
-
-```bash
-# Using the script (if added to PATH)
-broadcast-start-ngrok
-
-# Or manually:
-python3 ~/TerminalPrintoutBroadcast/server.py &
-ngrok http 8080
-```
-
-Copy the ngrok URL shown (e.g., `https://xxxx-xx-xx.ngrok-free.app`)
-
-#### 2. Start Logging (PowerShell)
-
-For commands you type manually:
-```powershell
-Start-Transcript -Path "C:\terminal_share\server_output.txt" -Append
-```
-
-For programs that print output:
 ```powershell
 your-program.exe *>> C:\terminal_share\program_output.txt
 ```
 
-#### 3. Share URL with Students
+**Examples:**
 
-Send the ngrok URL to your students. They open it in any browser.
-
-#### 4. Stop the Broadcast
-
-PowerShell:
+Python script:
 ```powershell
-Stop-Transcript
+python my_server.py *>> C:\terminal_share\program_output.txt
 ```
 
-WSL:
+Node.js app:
+```powershell
+node app.js *>> C:\terminal_share\program_output.txt
+```
+
+UV/Python project:
+```powershell
+uv run my-command *>> C:\terminal_share\program_output.txt
+```
+
+#### Step 3: Share URL with Students
+
+Send this URL to your students:
+```
+https://broadcast.yourdomain.com
+```
+
+They open it in any browser (phone, tablet, laptop) - no login required.
+
+### Stopping a Broadcast Session
+
+#### Step 1: Stop Your Program (PowerShell)
+
+Press `Ctrl+C` in PowerShell to stop your program.
+
+#### Step 2: Stop the Broadcast (WSL)
+
 ```bash
 broadcast-stop
-
-# Or manually:
-pkill -f server.py
-pkill ngrok
 ```
 
----
+**Expected output:**
+```
+Stopping broadcast...
+[OK] Broadcast stopped.
+```
 
-## Detailed Usage
+### Clearing Old Output
 
-### Broadcasting Typed Commands
+Before starting a new session, clear the previous output:
 
-Use `Start-Transcript` for interactive PowerShell sessions:
-
+**PowerShell:**
 ```powershell
-# Start logging
-Start-Transcript -Path "C:\terminal_share\server_output.txt" -Append
-
-# Your commands are now broadcast
-dir
-Get-Process
-# etc...
-
-# Stop logging
-Stop-Transcript
+Remove-Item C:\terminal_share\program_output.txt -ErrorAction SilentlyContinue
 ```
 
-**Note:** Make sure the server is configured to read `server_output.txt`:
-```python
-LOG_FILE = "/mnt/c/terminal_share/server_output.txt"
-```
-
-### Broadcasting Program Output
-
-For programs that print to stdout/stderr, use file redirection:
-
-```powershell
-# Redirect all output to file
-your-program.exe *>> C:\terminal_share\program_output.txt
-
-# Example with Python
-python your_script.py *>> C:\terminal_share\program_output.txt
-
-# Example with Node.js
-node your_app.js *>> C:\terminal_share\program_output.txt
-```
-
-**Note:** Make sure the server is configured to read `program_output.txt`:
-```python
-LOG_FILE = "/mnt/c/terminal_share/program_output.txt"
-```
-
-### Switching Between Files
-
-Edit `server.py` line 7 to change which file is broadcast:
-
-```python
-# For typed commands:
-LOG_FILE = "/mnt/c/terminal_share/server_output.txt"
-
-# For program output:
-LOG_FILE = "/mnt/c/terminal_share/program_output.txt"
-```
-
-Then restart the server:
+Or **WSL:**
 ```bash
-pkill -f server.py
-python3 ~/TerminalPrintoutBroadcast/server.py &
+rm /mnt/c/terminal_share/program_output.txt
 ```
 
 ---
 
-## WSL Commands Reference
+## Status Monitoring
 
-| Command | Description |
-|---------|-------------|
-| `broadcast-start-cloudflare` | Start broadcast with Cloudflare (permanent URL) |
-| `broadcast-start-ngrok` | Start broadcast with ngrok |
-| `broadcast-start-stable` | Start broadcast with localtunnel |
-| `broadcast-stop` | Stop all broadcast services |
-| `broadcast-status` | Check broadcast status |
+### Check Broadcast Status
 
----
+```bash
+broadcast-status
+```
 
-## PowerShell Commands Reference
+**Example output (everything working):**
+```
+==========================================
+  LGM Terminal Broadcast - STATUS
+==========================================
 
-| Command | Description |
-|---------|-------------|
-| `Start-Transcript -Path "C:\terminal_share\server_output.txt" -Append` | Start logging typed commands |
-| `Stop-Transcript` | Stop logging |
-| `command *>> C:\terminal_share\program_output.txt` | Redirect program output |
+[OK] Python server running (PID: 18654)
+[OK] Cloudflare tunnel running (PID: 22217)
 
----
+==========================================
+  URL
+==========================================
+  https://broadcast.gal-tech.net
 
-## File Locations
+==========================================
+  LOG FILE STATUS
+==========================================
+  File: C:\terminal_share\program_output.txt
+  Last modified: 2026-02-05 14:23:45
 
-| File | Path | Purpose |
-|------|------|---------|
-| Server script | `~/TerminalPrintoutBroadcast/server.py` | Python HTTP server |
-| Typed commands log | `C:\terminal_share\server_output.txt` | Start-Transcript output |
-| Program output log | `C:\terminal_share\program_output.txt` | Redirected program output |
-| Student URL | `C:\terminal_share\student_url.txt` | Saved broadcast URL |
+  [OK] File updated 3 seconds ago
+  Size: 45 KB (46123 bytes)
+
+==========================================
+  LAST 5 LINES OF OUTPUT
+==========================================
+
+[INFO] Processing request from client 192.168.1.50
+[INFO] Query completed in 0.023s
+[INFO] Sending response...
+[INFO] Request completed successfully
+[INFO] Waiting for next request...
+
+==========================================
+  BROWSER REFRESH RATE
+==========================================
+
+  The browser auto-refreshes every 500ms (0.5 seconds)
+  Students see updates within 0.5-1 second of file change
+```
+
+**Example output (problem detected):**
+```
+==========================================
+  LOG FILE STATUS
+==========================================
+  File: C:\terminal_share\program_output.txt
+  Last modified: 2026-02-05 14:20:00
+
+  [!] WARNING: No update for 245 seconds!
+      (Last update was more than 10 seconds ago)
+```
+
+This means your program stopped producing output. Check if it's still running.
 
 ---
 
 ## Troubleshooting
 
-### "command not found" error
-Open a new WSL terminal or run:
+### Problem: "command not found"
+
+**Symptom:**
+```bash
+broadcast-start-cloudflare: command not found
+```
+
+**Solution:**
 ```bash
 source ~/.bashrc
+# Or open a new terminal
 ```
 
-### ngrok authentication error
-Make sure you configured your authtoken:
+### Problem: Tunnel won't connect
+
+**Symptom:**
+```
+[ERROR] Failed to start tunnel
+```
+
+**Solution:**
 ```bash
-ngrok config add-authtoken YOUR_TOKEN
+# Check if already logged in
+ls ~/.cloudflared/cert.pem
+
+# If not, login again
+cloudflared tunnel login
 ```
 
-### File is locked / being used by another process
-Stop the transcript or use a different output file:
+### Problem: Students see old content
+
+**Symptom:** Browser shows content from last class.
+
+**Solution:**
+```bash
+# Clear the log file
+rm /mnt/c/terminal_share/program_output.txt
+
+# Restart broadcast
+broadcast-stop
+broadcast-start-cloudflare
+```
+
+### Problem: Weird characters / spaces between letters
+
+**Symptom:** Output looks like `H e l l o   W o r l d`
+
+**Cause:** PowerShell writes UTF-16, server reads UTF-8.
+
+**Solution:** The server is already configured for UTF-16-LE. If you still see this, restart the server:
+```bash
+broadcast-stop
+broadcast-start-cloudflare
+```
+
+### Problem: File locked by another process
+
+**Symptom:**
+```
+out-file : The process cannot access the file
+```
+
+**Solution:** Another program has the file open. Close it:
 ```powershell
+# If using Start-Transcript
 Stop-Transcript
+
+# Then use redirection instead
+your-program.exe *>> C:\terminal_share\program_output.txt
 ```
-
-### Weird font / spaces between characters
-The file encoding is wrong. The server expects UTF-16-LE for PowerShell redirected output. Check `server.py` uses the correct encoding:
-```python
-encoding='utf-16-le'  # For PowerShell redirected output
-encoding='utf-8'      # For Start-Transcript output
-```
-
-### Browser shows old content
-1. Hard refresh the browser (Ctrl+F5)
-2. Check the server is running: `ps aux | grep server.py`
-3. Restart the server
-
-### Students can't access the URL
-1. Check ngrok is running: `ps aux | grep ngrok`
-2. Get the current URL: `curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*'`
 
 ---
 
-## Alternative: Using localtunnel
+## File Reference
 
-If you prefer not to create an ngrok account, you can use localtunnel (no signup required):
+### Project Files
 
-### Install localtunnel
-```bash
-sudo npm install -g localtunnel
-```
+| File | Purpose |
+|------|---------|
+| `server.py` | Python HTTP server that serves the log file as HTML |
+| `broadcast-start-cloudflare` | Start broadcast with Cloudflare tunnel |
+| `broadcast-start-ngrok` | Start broadcast with ngrok (alternative) |
+| `broadcast-start-stable` | Start broadcast with localtunnel (alternative) |
+| `broadcast-stop` | Stop all broadcast services |
+| `broadcast-status` | Check status and show last output |
 
-### Start with stable URL
-```bash
-broadcast-start-stable
-# URL: https://lgm-monitor.loca.lt
-```
+### Configuration Files
 
-**Note:** localtunnel may ask viewers for an IP verification on first visit.
+| File | Location | Purpose |
+|------|----------|---------|
+| `cert.pem` | `~/.cloudflared/` | Cloudflare account credentials |
+| `*.json` | `~/.cloudflared/` | Tunnel-specific credentials |
+| `config.yml` | `~/.cloudflared/` | Tunnel routing configuration |
+
+### Runtime Files
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `program_output.txt` | `C:\terminal_share\` | Your program's output |
+| `server_output.txt` | `C:\terminal_share\` | Start-Transcript output (alternative) |
+| `student_url.txt` | `C:\terminal_share\` | Saved broadcast URL |
 
 ---
 
-## How It Works
+## Quick Reference Card
 
-1. **PowerShell** writes terminal output to a log file
-2. **Python server** reads the log file and serves it as a web page
-3. **ngrok** creates a secure tunnel from the internet to your local server
-4. **Students** open the ngrok URL in their browser and see live updates
+### Start Class
+```bash
+# WSL
+broadcast-start-cloudflare
+```
+```powershell
+# PowerShell
+your-program.exe *>> C:\terminal_share\program_output.txt
+```
 
-The web page auto-refreshes every 500ms to show new content.
+### Check Status
+```bash
+# WSL
+broadcast-status
+```
+
+### End Class
+```powershell
+# PowerShell - Stop your program
+Ctrl+C
+```
+```bash
+# WSL
+broadcast-stop
+```
+
+### Student URL
+```
+https://broadcast.gal-tech.net
+```
 
 ---
 
@@ -366,8 +770,6 @@ The web page auto-refreshes every 500ms to show new content.
 
 MIT License - Feel free to use and modify.
 
----
+## Repository
 
-## Contributing
-
-Pull requests welcome! Please open an issue first to discuss proposed changes.
+https://github.com/rmisegal/TerminalPrintoutBroadcast
