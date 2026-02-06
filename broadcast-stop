@@ -24,17 +24,18 @@ if [ -f "$KEEPER_PID" ]; then
 fi
 pkill -f "tunnel-keeper" 2>/dev/null
 
-# Stop tunnel (ngrok, localhost.run, and localtunnel)
+# Stop tunnel (cloudflared, ngrok, localhost.run, and localtunnel)
 if [ -f "$TUNNEL_PID" ]; then
     kill $(cat "$TUNNEL_PID") 2>/dev/null
     rm -f "$TUNNEL_PID"
 fi
+pkill -f "cloudflared tunnel run" 2>/dev/null
 pkill -f "ssh.*localhost.run" 2>/dev/null
 pkill -f "lt --port" 2>/dev/null
 pkill -f "ngrok" 2>/dev/null
 
 # Clean up
-rm -f "$URL_FILE" /tmp/tunnel.log /tmp/server.log /tmp/tunnel_keeper.log 2>/dev/null
+rm -f "$URL_FILE" /tmp/tunnel.log /tmp/server.log /tmp/tunnel_keeper.log /tmp/cloudflared.log 2>/dev/null
 
 echo "[OK] Broadcast stopped."
 echo ""

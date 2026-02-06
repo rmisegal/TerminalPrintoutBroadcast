@@ -7,7 +7,7 @@ Broadcast your PowerShell terminal output to students/viewers in real-time throu
 This tool allows instructors to share their terminal output with students during live coding sessions. Students can view the terminal output in real-time through any web browser - no installation required on their end.
 
 ```
-[PowerShell Terminal] --> [Log File] --> [Python Server] --> [ngrok Tunnel] --> [Students' Browsers]
+[PowerShell Terminal] --> [Log File] --> [Python Server] --> [Tunnel] --> [Students' Browsers]
 ```
 
 ## Features
@@ -18,6 +18,17 @@ This tool allows instructors to share their terminal output with students during
 - No installation required for viewers
 - Dark terminal-style interface
 - Auto-scrolling to latest output
+- **Permanent URL** with Cloudflare Tunnel (recommended)
+
+---
+
+## Tunnel Options
+
+| Option | URL Type | Limits | Setup |
+|--------|----------|--------|-------|
+| **Cloudflare Tunnel** (recommended) | Permanent (`broadcast.yourdomain.com`) | Unlimited | Requires your own domain |
+| ngrok | Changes each restart | Free tier has bandwidth limits | Free account required |
+| localtunnel | Stable subdomain | Unlimited but asks for IP password | No signup |
 
 ---
 
@@ -27,13 +38,60 @@ This tool allows instructors to share their terminal output with students during
 
 - **Windows 10/11** with WSL2 (Ubuntu)
 - **Python 3** (in WSL)
-- **ngrok account** (free) - https://ngrok.com
+- **One of:** Cloudflare account + domain (recommended), ngrok account, or npm for localtunnel
 
 ---
 
 ## Installation
 
-### Step 1: Install ngrok in WSL
+### Option A: Cloudflare Tunnel (Recommended - Permanent URL)
+
+#### Step 1: Install cloudflared in WSL
+
+```bash
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+chmod +x /tmp/cloudflared && sudo mv /tmp/cloudflared /usr/local/bin/
+```
+
+#### Step 2: Login to Cloudflare
+
+```bash
+cloudflared tunnel login
+```
+Open the URL shown and authorize with your Cloudflare account.
+
+#### Step 3: Create a Named Tunnel
+
+```bash
+cloudflared tunnel create terminal-broadcast
+```
+
+#### Step 4: Add DNS Route (use your domain)
+
+```bash
+cloudflared tunnel route dns terminal-broadcast broadcast.yourdomain.com
+```
+
+#### Step 5: Create Config File
+
+Create `~/.cloudflared/config.yml`:
+```yaml
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /home/YOUR_USER/.cloudflared/YOUR_TUNNEL_ID.json
+
+ingress:
+  - hostname: broadcast.yourdomain.com
+    service: http://localhost:8080
+  - service: http_status:404
+```
+
+Now you can use `broadcast-start-cloudflare` for a permanent URL!
+
+---
+
+### Option B: ngrok (Easy Setup - URL Changes)
+
+#### Step 1: Install ngrok in WSL
 
 Open WSL terminal and run:
 
@@ -207,6 +265,7 @@ python3 ~/TerminalPrintoutBroadcast/server.py &
 
 | Command | Description |
 |---------|-------------|
+| `broadcast-start-cloudflare` | Start broadcast with Cloudflare (permanent URL) |
 | `broadcast-start-ngrok` | Start broadcast with ngrok |
 | `broadcast-start-stable` | Start broadcast with localtunnel |
 | `broadcast-stop` | Stop all broadcast services |

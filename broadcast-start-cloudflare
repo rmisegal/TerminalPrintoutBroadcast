@@ -1,0 +1,137 @@
+#!/bin/bash
+# broadcast-start-cloudflare - Start broadcasting with Cloudflare Tunnel
+# Uses Python server + cloudflared (https://broadcast.gal-tech.net)
+
+# Configuration
+SHARE_DIR="/mnt/c/terminal_share"
+LOG_FILE="$SHARE_DIR/program_output.txt"
+URL_FILE="$SHARE_DIR/student_url.txt"
+SERVER_PID="/tmp/broadcast_server.pid"
+TUNNEL_PID="/tmp/tunnel.pid"
+TUNNEL_LOG="/tmp/cloudflared.log"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+TUNNEL_NAME="terminal-broadcast"
+STABLE_URL="https://broadcast.gal-tech.net"
+
+echo "=========================================="
+echo "  LGM Terminal Broadcast - CLOUDFLARE"
+echo "=========================================="
+
+# Step 1: Check if cloudflared is installed
+if ! command -v cloudflared &> /dev/null; then
+    echo "[ERROR] cloudflared is not installed!"
+    echo ""
+    echo "Install with:"
+    echo "  curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared"
+    echo "  chmod +x /tmp/cloudflared && sudo mv /tmp/cloudflared /usr/local/bin/"
+    exit 1
+fi
+
+# Step 2: Check if cloudflared is configured
+if [ ! -f ~/.cloudflared/cert.pem ]; then
+    echo "[ERROR] cloudflared is not logged in!"
+    echo ""
+    echo "Run: cloudflared tunnel login"
+    exit 1
+fi
+
+# Step 3: Check if tunnel exists
+if ! cloudflared tunnel list | grep -q "$TUNNEL_NAME"; then
+    echo "[ERROR] Tunnel '$TUNNEL_NAME' does not exist!"
+    echo ""
+    echo "Create it with:"
+    echo "  cloudflared tunnel create $TUNNEL_NAME"
+    echo "  cloudflared tunnel route dns $TUNNEL_NAME broadcast.gal-tech.net"
+    exit 1
+fi
+
+# Step 4: Create shared folder if missing
+if [ ! -d "$SHARE_DIR" ]; then
+    mkdir -p "$SHARE_DIR"
+    echo "[OK] Created shared folder: $SHARE_DIR"
+else
+    echo "[OK] Shared folder exists: $SHARE_DIR"
+fi
+
+# Step 5: Check if already running
+if [ -f "$SERVER_PID" ] && kill -0 $(cat "$SERVER_PID") 2>/dev/null; then
+    echo "[!] Broadcast already running. Use 'broadcast-stop' first."
+    exit 1
+fi
+
+# Step 6: Create empty log file if missing
+if [ ! -f "$LOG_FILE" ]; then
+    touch "$LOG_FILE"
+    echo "[OK] Created log file: $LOG_FILE"
+else
+    echo "[OK] Log file exists: $LOG_FILE"
+fi
+
+# Step 7: Kill any old processes
+pkill -f "server.py" 2>/dev/null
+pkill -f "cloudflared tunnel run" 2>/dev/null
+pkill -f "ngrok" 2>/dev/null
+pkill -f "lt --port" 2>/dev/null
+sleep 1
+
+# Step 8: Start Python web server
+echo "[..] Starting web server..."
+python3 "$SCRIPT_DIR/server.py" > /tmp/server.log 2>&1 &
+echo $! > "$SERVER_PID"
+sleep 2
+
+# Verify server is running
+if ! curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 | grep -q "200"; then
+    echo "[ERROR] Failed to start server. Check /tmp/server.log"
+    cat /tmp/server.log
+    exit 1
+fi
+echo "[OK] Web server running on port 8080"
+
+# Step 9: Start Cloudflare tunnel
+echo "[..] Starting Cloudflare tunnel..."
+cloudflared tunnel run "$TUNNEL_NAME" > "$TUNNEL_LOG" 2>&1 &
+echo $! > "$TUNNEL_PID"
+
+# Wait for tunnel to connect
+sleep 5
+
+# Check if tunnel is running
+if ! kill -0 $(cat "$TUNNEL_PID") 2>/dev/null; then
+    echo "[ERROR] Failed to start tunnel. Check /tmp/cloudflared.log"
+    tail -10 "$TUNNEL_LOG"
+    exit 1
+fi
+
+# Check for successful connection in log
+if grep -q "Registered tunnel connection" "$TUNNEL_LOG"; then
+    echo "[OK] Cloudflare tunnel connected"
+else
+    echo "[WARN] Tunnel may still be connecting..."
+fi
+
+# Save URL
+echo "$STABLE_URL" > "$URL_FILE"
+
+echo ""
+echo "=========================================="
+echo "  BROADCAST READY!"
+echo "=========================================="
+echo ""
+echo "  PERMANENT STUDENT URL:"
+echo "  $STABLE_URL"
+echo ""
+echo "  URL saved to: C:\\terminal_share\\student_url.txt"
+echo ""
+echo "=========================================="
+echo ""
+echo "  NEXT STEP - In PowerShell, run:"
+echo "  your-program.exe *>> C:\\terminal_share\\program_output.txt"
+echo ""
+echo "  Example:"
+echo "  uv run gtai-league scan -m full *>> C:\\terminal_share\\program_output.txt"
+echo ""
+echo "=========================================="
+echo ""
+echo "Use 'broadcast-status' to check status."
+echo "Use 'broadcast-stop' to stop."
