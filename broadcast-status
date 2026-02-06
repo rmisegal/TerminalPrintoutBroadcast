@@ -1,51 +1,123 @@
 #!/bin/bash
-# broadcast-status - Check broadcast status and show URL
+# broadcast-status - Check the status of terminal broadcast
 
 SHARE_DIR="/mnt/c/terminal_share"
+LOG_FILE="$SHARE_DIR/program_output.txt"
 URL_FILE="$SHARE_DIR/student_url.txt"
-SERVER_PID="/tmp/broadcast_server.pid"
-TUNNEL_PID="/tmp/tunnel.pid"
-TUNNEL_LOG="/tmp/tunnel.log"
 
 echo "=========================================="
-echo "  LGM Broadcast Status"
+echo "  LGM Terminal Broadcast - STATUS"
 echo "=========================================="
+echo ""
 
-# Check if server is running
-SERVER_RUNNING=false
-if [ -f "$SERVER_PID" ] && kill -0 $(cat "$SERVER_PID") 2>/dev/null; then
-    SERVER_RUNNING=true
+# Check Python server
+SERVER_PID=$(pgrep -f "server.py" | head -1)
+if [ -n "$SERVER_PID" ]; then
+    echo "[OK] Python server running (PID: $SERVER_PID)"
+else
+    echo "[X] Python server NOT running"
 fi
 
-# Check if tunnel is running
-TUNNEL_RUNNING=false
-if [ -f "$TUNNEL_PID" ] && kill -0 $(cat "$TUNNEL_PID") 2>/dev/null; then
-    TUNNEL_RUNNING=true
-fi
-
-if $SERVER_RUNNING && $TUNNEL_RUNNING; then
-    echo "  Status: RUNNING"
-    echo ""
-
-    # Get URL from file or log
-    if [ -f "$URL_FILE" ]; then
-        echo "  Student URL:"
-        echo "  $(cat $URL_FILE)"
-    elif [ -f "$TUNNEL_LOG" ]; then
-        URL=$(grep -o 'https://[a-z0-9]*\.lhr\.life' "$TUNNEL_LOG" | head -1)
-        if [ -n "$URL" ]; then
-            echo "  Student URL:"
-            echo "  $URL"
+# Check Cloudflare tunnel
+CF_PID=$(pgrep -f "cloudflared tunnel run" | head -1)
+if [ -n "$CF_PID" ]; then
+    echo "[OK] Cloudflare tunnel running (PID: $CF_PID)"
+    TUNNEL_TYPE="cloudflare"
+else
+    # Check ngrok
+    NGROK_PID=$(pgrep -f "ngrok" | head -1)
+    if [ -n "$NGROK_PID" ]; then
+        echo "[OK] ngrok tunnel running (PID: $NGROK_PID)"
+        TUNNEL_TYPE="ngrok"
+    else
+        # Check localtunnel
+        LT_PID=$(pgrep -f "lt --port" | head -1)
+        if [ -n "$LT_PID" ]; then
+            echo "[OK] localtunnel running (PID: $LT_PID)"
+            TUNNEL_TYPE="localtunnel"
+        else
+            echo "[X] No tunnel running (cloudflared/ngrok/localtunnel)"
+            TUNNEL_TYPE="none"
         fi
     fi
-elif $SERVER_RUNNING; then
-    echo "  Status: PARTIALLY RUNNING (tunnel down)"
-    echo ""
-    echo "  Run 'broadcast-stop' then 'broadcast-start' to restart."
-else
-    echo "  Status: NOT RUNNING"
-    echo ""
-    echo "  Run 'broadcast-start' to begin."
 fi
 
+echo ""
 echo "=========================================="
+echo "  URL"
+echo "=========================================="
+
+# Show URL based on tunnel type
+if [ "$TUNNEL_TYPE" = "cloudflare" ]; then
+    echo "  https://broadcast.gal-tech.net"
+elif [ "$TUNNEL_TYPE" = "ngrok" ]; then
+    NGROK_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -o 'https://[^"]*' | head -1)
+    if [ -n "$NGROK_URL" ]; then
+        echo "  $NGROK_URL"
+    else
+        echo "  [Unable to get ngrok URL]"
+    fi
+elif [ "$TUNNEL_TYPE" = "localtunnel" ]; then
+    echo "  https://lgm-monitor.loca.lt"
+else
+    echo "  [No tunnel running]"
+fi
+
+echo ""
+echo "=========================================="
+echo "  LOG FILE STATUS"
+echo "=========================================="
+
+if [ -f "$LOG_FILE" ]; then
+    # Get file modification time
+    FILE_MOD_TIME=$(stat -c %Y "$LOG_FILE" 2>/dev/null)
+    CURRENT_TIME=$(date +%s)
+    TIME_DIFF=$((CURRENT_TIME - FILE_MOD_TIME))
+
+    # Format last modified time
+    LAST_MOD=$(date -d "@$FILE_MOD_TIME" "+%Y-%m-%d %H:%M:%S" 2>/dev/null)
+
+    echo "  File: C:\\terminal_share\\program_output.txt"
+    echo "  Last modified: $LAST_MOD"
+    echo ""
+
+    if [ "$TIME_DIFF" -gt 10 ]; then
+        echo "  [!] WARNING: No update for ${TIME_DIFF} seconds!"
+        echo "      (Last update was more than 10 seconds ago)"
+    else
+        echo "  [OK] File updated ${TIME_DIFF} seconds ago"
+    fi
+
+    # Show file size
+    FILE_SIZE=$(stat -c %s "$LOG_FILE" 2>/dev/null)
+    FILE_SIZE_KB=$((FILE_SIZE / 1024))
+    echo "  Size: ${FILE_SIZE_KB} KB (${FILE_SIZE} bytes)"
+
+    echo ""
+    echo "=========================================="
+    echo "  LAST 5 LINES OF OUTPUT"
+    echo "=========================================="
+    echo ""
+    # Read last 5 lines (handle UTF-16 encoding)
+    tail -c 2000 "$LOG_FILE" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tail -5 || tail -5 "$LOG_FILE" 2>/dev/null
+else
+    echo "  [X] Log file not found: C:\\terminal_share\\program_output.txt"
+    echo ""
+    echo "  Make sure to run your program with:"
+    echo "  your-program.exe *>> C:\\terminal_share\\program_output.txt"
+fi
+
+echo ""
+echo "=========================================="
+echo "  BROWSER REFRESH RATE"
+echo "=========================================="
+echo ""
+echo "  The browser auto-refreshes every 500ms (0.5 seconds)"
+echo "  Students see updates within 0.5-1 second of file change"
+echo ""
+echo "=========================================="
+echo ""
+echo "  Commands:"
+echo "    broadcast-start-cloudflare  - Start with Cloudflare"
+echo "    broadcast-stop              - Stop all services"
+echo ""
